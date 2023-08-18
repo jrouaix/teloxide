@@ -58,9 +58,8 @@ where
     try_repl(bot, handler).await.expect("try_repl failed")
 }
 
-
 /// Same as `repl` but returns a Result<_> instead of panicking
-/// 
+///
 /// A [REPL] for messages.
 //
 ///
@@ -102,8 +101,7 @@ where
 #[doc = include_str!("caution.md")]
 ///
 #[cfg(feature = "ctrlc_handler")]
-pub async fn try_repl<R, H, Args>(bot: R, handler: H)
--> Result<(), R::Err>
+pub async fn try_repl<R, H, Args>(bot: R, handler: H) -> Result<(), R::Err>
 where
     R: Requester + Send + Sync + Clone + 'static,
     <R as Requester>::GetUpdates: Send,
@@ -168,7 +166,7 @@ where
 }
 
 /// Same as `repl_with_listener` but returns a Result<_> instead of panicking
-/// 
+///
 /// A [REPL] for messages, with a custom [`UpdateListener`].
 //
 ///

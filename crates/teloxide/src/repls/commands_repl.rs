@@ -78,11 +78,40 @@ pub trait CommandReplExt {
         <R as Requester>::DeleteWebhook: Send,
         H: Injectable<DependencyMap, ResponseResult<()>, Args> + Send + Sync + 'static;
 
+    /// A REPL for commands.
+    ///
+    /// See [`CommandReplExt`] for more details.
+    #[must_use]
+    fn try_repl<'a, R, H, Args>(bot: R, handler: H) -> BoxFuture<'a, Result<(), R::Err>>
+    where
+        R: Requester + Clone + Send + Sync + 'static,
+        <R as Requester>::GetUpdates: Send,
+        <R as Requester>::GetWebhookInfo: Send,
+        <R as Requester>::GetMe: Send,
+        <R as Requester>::DeleteWebhook: Send,
+        H: Injectable<DependencyMap, ResponseResult<()>, Args> + Send + Sync + 'static;
+
     /// A REPL for commands with a custom [`UpdateListener`].
     ///
     /// See [`CommandReplExt`] for more details.
     #[must_use]
     fn repl_with_listener<'a, R, H, L, Args>(bot: R, handler: H, listener: L) -> BoxFuture<'a, ()>
+    where
+        H: Injectable<DependencyMap, ResponseResult<()>, Args> + Send + Sync + 'static,
+        L: UpdateListener + Send + 'a,
+        L::Err: Debug + Send + 'a,
+        R: Requester + Clone + Send + Sync + 'static,
+        <R as Requester>::GetMe: Send;
+
+    /// A REPL for commands with a custom [`UpdateListener`].
+    ///
+    /// See [`CommandReplExt`] for more details.
+    #[must_use]
+    fn try_repl_with_listener<'a, R, H, L, Args>(
+        bot: R,
+        handler: H,
+        listener: L,
+    ) -> BoxFuture<'a, Result<(), R::Err>>
     where
         H: Injectable<DependencyMap, ResponseResult<()>, Args> + Send + Sync + 'static,
         L: UpdateListener + Send + 'a,
@@ -117,6 +146,27 @@ where
         })
     }
 
+    fn try_repl<'a, R, H, Args>(bot: R, handler: H) -> BoxFuture<'a, Result<(), R::Err>>
+    where
+        R: Requester + Clone + Send + Sync + 'static,
+        <R as Requester>::GetUpdates: Send,
+        <R as Requester>::GetWebhookInfo: Send,
+        <R as Requester>::GetMe: Send,
+        <R as Requester>::DeleteWebhook: Send,
+        H: Injectable<DependencyMap, ResponseResult<()>, Args> + Send + Sync + 'static,
+    {
+        let cloned_bot = bot.clone();
+
+        Box::pin(async move {
+            Self::try_repl_with_listener(
+                bot,
+                handler,
+                update_listeners::polling_default(cloned_bot).await,
+            )
+            .await
+        })
+    }
+
     fn repl_with_listener<'a, R, H, L, Args>(bot: R, handler: H, listener: L) -> BoxFuture<'a, ()>
     where
         H: Injectable<DependencyMap, ResponseResult<()>, Args> + Send + Sync + 'static,
@@ -140,6 +190,40 @@ where
             .enable_ctrlc_handler()
             .build()
             .dispatch_with_listener(
+                listener,
+                LoggingErrorHandler::with_custom_text("An error from the update listener"),
+            )
+            .await
+        })
+    }
+
+    fn try_repl_with_listener<'a, R, H, L, Args>(
+        bot: R,
+        handler: H,
+        listener: L,
+    ) -> BoxFuture<'a, Result<(), R::Err>>
+    where
+        H: Injectable<DependencyMap, ResponseResult<()>, Args> + Send + Sync + 'static,
+        L: UpdateListener + Send + 'a,
+        L::Err: Debug + Send + 'a,
+        R: Requester + Clone + Send + Sync + 'static,
+        <R as Requester>::GetMe: Send,
+    {
+        use crate::dispatching::Dispatcher;
+
+        // Other update types are of no interest to use since this REPL is only for
+        // commands. See <https://github.com/teloxide/teloxide/issues/557>.
+        let ignore_update = |_upd| Box::pin(async {});
+
+        Box::pin(async move {
+            Dispatcher::builder(
+                bot,
+                Update::filter_message().filter_command::<Cmd>().endpoint(handler),
+            )
+            .default_handler(ignore_update)
+            .enable_ctrlc_handler()
+            .build()
+            .try_dispatch_with_listener(
                 listener,
                 LoggingErrorHandler::with_custom_text("An error from the update listener"),
             )
